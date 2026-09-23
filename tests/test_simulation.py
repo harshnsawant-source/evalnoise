@@ -43,7 +43,7 @@ def simulate(n, churn_rate, true_effect, seed, base_rate=0.6):
         baseline.append(base)
         variant.append(value)
     ids = [f"q{i}" for i in range(n)]
-    return Paired(ids=ids, baseline=baseline, variant=variant,
+    return Paired(ids=ids, baseline=baseline, variant=variant, kind="binary",
                   unmatched_baseline=[], unmatched_variant=[])
 
 

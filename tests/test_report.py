@@ -7,7 +7,7 @@ from evalnoise.verdict import analyse
 
 def paired(baseline, variant):
     ids = [f"q{i}" for i in range(len(baseline))]
-    return Paired(ids=ids, baseline=baseline, variant=variant,
+    return Paired(ids=ids, baseline=baseline, variant=variant, kind="binary",
                   unmatched_baseline=[], unmatched_variant=[])
 
 

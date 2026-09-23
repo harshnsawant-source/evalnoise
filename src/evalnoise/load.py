@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import csv
 import json
+from math import isfinite
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -33,6 +34,7 @@ class Paired:
     ids: list[str]
     baseline: list[float]
     variant: list[float]
+    kind: str  # "binary" or "numeric"; the report needs it to choose units
     unmatched_baseline: list[str]
     unmatched_variant: list[str]
 
@@ -56,13 +58,19 @@ def _as_number(value: object, item_id: str, path: Path) -> float:
         raise LoadError(
             f"{path}: item {item_id!r} has a 'score' that is not a number: {value!r}"
         ) from None
-    if number != number:  # NaN
-        raise LoadError(f"{path}: item {item_id!r} has a 'score' of NaN")
+    #: NaN and the infinities are all rejected: json.dump writes bare Infinity for a
+    #: float infinity, so a harness that divided by zero produces exactly this, and an
+    #: infinite score makes every threshold in the tool meaningless.
+    if not isfinite(number):
+        raise LoadError(f"{path}: item {item_id!r} has a 'score' that is not a finite number")
     return number
 
 
 def _rows(path: Path) -> list[dict]:
-    text = path.read_text(encoding="utf-8-sig")
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise LoadError(f"{path}: cannot be read as UTF-8 text ({exc.__class__.__name__})") from None
     if path.suffix.lower() == ".csv":
         return [dict(row) for row in csv.DictReader(text.splitlines())]
     rows = []
@@ -84,6 +92,12 @@ def load_run(path: str | Path) -> Run:
     outcomes: dict[str, float] = {}
     kind: str | None = None
     for row in _rows(path):
+        if not isinstance(row, dict):
+            #: A whole JSON array on one line parses as a list, not a row. Say so rather
+            #: than crashing with AttributeError and an exit code CI reads as "noise".
+            raise LoadError(
+                f"{path}: expected one JSON object per line; found a {type(row).__name__}"
+            )
         item_id = row.get("id")
         if item_id is None or str(item_id).strip() == "":
             raise LoadError(f"{path}: a row has no 'id'")
@@ -125,6 +139,7 @@ def pair(a: Run, b: Run) -> Paired:
         ids=shared,
         baseline=[a.outcomes[i] for i in shared],
         variant=[b.outcomes[i] for i in shared],
+        kind=a.kind,
         unmatched_baseline=sorted(set(a.outcomes) - set(b.outcomes)),
         unmatched_variant=sorted(set(b.outcomes) - set(a.outcomes)),
     )

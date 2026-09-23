@@ -29,20 +29,39 @@ def _check(baseline: Sequence[Number], variant: Sequence[Number]) -> None:
         raise ValueError("no paired items")
 
 
-def delta(baseline: Sequence[Number], variant: Sequence[Number]) -> float:
-    """Mean of the variant minus mean of the baseline."""
+def effective_diffs(
+    baseline: Sequence[Number], variant: Sequence[Number], epsilon: float = 0.0
+) -> list[float]:
+    """Per-item movement, with anything at or below `epsilon` treated as no movement.
+
+    Every statistic in this module is built on this list, which is the only way they can
+    agree. An earlier version applied epsilon to churn, to gains and losses, and to the
+    permutation null, but not to the delta: a hundred items each improving by 0.04 under
+    an epsilon of 0.05 then reported "+4.0 points" and "no item changed outcome" in the
+    same breath, and the detection threshold was computed from a different set of items
+    than the delta it was compared against.
+    """
+    if epsilon < 0:
+        raise ValueError("epsilon must not be negative")
     _check(baseline, variant)
-    n = len(baseline)
-    return sum(variant) / n - sum(baseline) / n
+    return [(v - b) if abs(v - b) > epsilon else 0.0 for b, v in zip(baseline, variant)]
+
+
+def delta(
+    baseline: Sequence[Number], variant: Sequence[Number], epsilon: float = 0.0
+) -> float:
+    """Mean movement from baseline to variant, ignoring moves within epsilon."""
+    diffs = effective_diffs(baseline, variant, epsilon)
+    return sum(diffs) / len(diffs)
 
 
 def churn(
     baseline: Sequence[Number], variant: Sequence[Number], epsilon: float = 0.0
 ) -> tuple[int, float]:
     """How many items changed outcome, and what share of the total that is."""
-    _check(baseline, variant)
-    changed = sum(1 for b, v in zip(baseline, variant) if abs(v - b) > epsilon)
-    return changed, changed / len(baseline)
+    diffs = effective_diffs(baseline, variant, epsilon)
+    changed = sum(1 for d in diffs if d != 0.0)
+    return changed, changed / len(diffs)
 
 
 def gains_losses(
@@ -53,10 +72,8 @@ def gains_losses(
     Reporting these apart is the point of the tool: 34 gains and 33 losses average out
     to nothing, and a mean cannot tell that apart from 67 items nobody touched.
     """
-    _check(baseline, variant)
-    gains = sum(1 for b, v in zip(baseline, variant) if v - b > epsilon)
-    losses = sum(1 for b, v in zip(baseline, variant) if b - v > epsilon)
-    return gains, losses
+    diffs = effective_diffs(baseline, variant, epsilon)
+    return sum(1 for d in diffs if d > 0), sum(1 for d in diffs if d < 0)
 
 
 def mcnemar_exact(gains: int, losses: int) -> float:
@@ -91,8 +108,7 @@ def permutation_critical(
     produces from nothing. The returned value is that distribution's (1 - alpha)
     quantile of |delta|: an effect smaller than this is not distinguishable from churn.
     """
-    _check(baseline, variant)
-    moves = [v - b for b, v in zip(baseline, variant) if abs(v - b) > epsilon]
+    moves = [d for d in effective_diffs(baseline, variant, epsilon) if d != 0.0]
     if not moves:
         return 0.0
     n = len(baseline)
@@ -110,6 +126,7 @@ def bootstrap_ci(
     baseline: Sequence[Number],
     variant: Sequence[Number],
     *,
+    epsilon: float = 0.0,
     resamples: int = DEFAULT_RESAMPLES,
     seed: int = DEFAULT_SEED,
     confidence: float = 0.95,
@@ -120,8 +137,7 @@ def bootstrap_ci(
     the same items; pairing is what removes the item-difficulty variance that would
     otherwise swamp the effect.
     """
-    _check(baseline, variant)
-    diffs = [v - b for b, v in zip(baseline, variant)]
+    diffs = effective_diffs(baseline, variant, epsilon)
     n = len(diffs)
     rng = random.Random(seed)
     means = []

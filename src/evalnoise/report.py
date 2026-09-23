@@ -10,33 +10,63 @@ from __future__ import annotations
 import json
 
 
-def _points(value: float) -> str:
-    return f"{value * 100:+.1f}"
+def _signed(value: float, analysis: dict) -> str:
+    scale = analysis["units"]["scale"]
+    return f"{value * scale:+.1f}" if scale != 1.0 else f"{value * scale:+.2f}"
+
+
+def _size(value: float, analysis: dict) -> str:
+    scale = analysis["units"]["scale"]
+    return f"{value * scale:.1f}" if scale != 1.0 else f"{value * scale:.2f}"
+
+
+def _unit(analysis: dict) -> str:
+    return f" {analysis['units']['unit']}" if analysis["units"]["unit"] else ""
+
+
+def _unmatched(items: dict) -> str:
+    """Counts by side with example ids: a bare total hides an id-format clash."""
+    parts = []
+    for side in ("baseline", "variant"):
+        count = items[f"unmatched_{side}"]
+        if not count:
+            continue
+        examples = ", ".join(items[f"example_unmatched_{side}"])
+        parts.append(f"{count} only in {side} (e.g. {examples})")
+    return "; ".join(parts) if parts else "none unmatched"
 
 
 def render_text(analysis: dict) -> str:
     change = analysis["change"]
     items = analysis["items"]
-    lines = [
-        f"items          {items['paired']} paired   "
-        f"({items['unmatched_baseline'] + items['unmatched_variant']} unmatched)",
-    ]
+    unit = _unit(analysis)
+    lines = [f"items          {items['paired']} paired   ({_unmatched(items)})"]
     noise = analysis["noise_floor"]
-    if noise:
+    if noise and noise["band"] is not None:
+        measured = f", measured on {noise['paired']} items"
+        if noise["unmatched"]:
+            measured += f" ({noise['unmatched']} unmatched)"
         lines.append(
-            f"noise floor    +/-{noise['band'] * 100:.1f} points  "
-            f"churn {noise['churn_rate']:.0%}  ({noise['churn_count']} flipped)"
+            f"noise floor    +/-{_size(noise['band'], analysis)}{unit}  "
+            f"churn {noise['churn_rate']:.0%}  ({noise['churn_count']} flipped{measured})"
+        )
+    elif noise:
+        lines.append(
+            f"noise floor    unmeasurable - the A/A pair flipped nothing, "
+            f"on {noise['paired']} items"
         )
     else:
         lines.append("noise floor    not measured - no --aa pair was supplied")
     lines += [
-        f"your change    {_points(change['delta'])} points  "
+        f"your change    {_signed(change['delta'], analysis)}{unit}  "
         f"churn {change['churn_rate']:.0%}  ({change['churn_count']} flipped: "
         f"{change['gains']} gained, {change['losses']} lost)",
-        f"               95% CI [{_points(change['ci_low'])}, {_points(change['ci_high'])}]   "
-        f"McNemar p = {change['p_value']:.2f}",
-        f"               smallest effect this setup could detect: "
-        f"+/-{change['critical'] * 100:.1f} points",
+        f"               95% CI [{_signed(change['ci_low'], analysis)}, "
+        f"{_signed(change['ci_high'], analysis)}]   McNemar p = {change['p_value']:.2f}",
+        #: Not "the smallest effect you could detect": this is the 95th percentile of what
+        #: chance produces here, so an effect equal to it is caught about half the time.
+        f"               detection threshold (chance alone reaches this 5% of the time): "
+        f"+/-{_size(change['critical'], analysis)}{unit}",
         "",
         f"VERDICT  {analysis['verdict']['name']}",
         f"         {analysis['verdict']['reason']}",

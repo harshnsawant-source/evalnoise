@@ -32,6 +32,8 @@ def test_reproduces_the_published_numbers(analysis):
 
 def test_the_positive_delta_does_not_survive_the_verdict(analysis):
     #: No A/A pair exists for this published run, so only the detection threshold and the
-    #: balance of flips are available to judge it — and the change clears neither.
-    assert analysis["verdict"]["name"] == "INSIDE_NOISE"
+    #: balance of flips are available to judge it, and the change clears neither. The
+    #: verdict says UNCALIBRATED because claiming a result is inside "your" noise when no
+    #: noise was measured is exactly the overclaim this tool exists to stop.
+    assert analysis["verdict"]["name"] == "UNCALIBRATED_INSIDE_NOISE"
     assert analysis["change"]["p_value"] > 0.05

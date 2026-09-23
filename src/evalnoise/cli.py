@@ -39,7 +39,21 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _validate(args: argparse.Namespace) -> None:
+    """Refuse settings that would make the report state falsehoods.
+
+    A negative epsilon counts every item as both a gain and a loss, so the report would
+    print "100 flipped: 100 gained, 100 lost" on 100 items; an alpha near 1 calls almost
+    anything real. Neither is a judgement call the tool should make silently.
+    """
+    if args.epsilon < 0:
+        raise LoadError(f"--epsilon must not be negative (got {args.epsilon})")
+    if not 0 < args.alpha <= 0.5:
+        raise LoadError(f"--alpha must be above 0 and at most 0.5 (got {args.alpha})")
+
+
 def _check(args: argparse.Namespace) -> int:
+    _validate(args)
     baseline = load_run(args.baseline)
     variant = load_run(args.variant)
     paired_ab = pair(baseline, variant)
@@ -55,6 +69,12 @@ def main(argv: list[str] | None = None) -> int:
         return args.func(args)
     except LoadError as exc:
         print(f"evalnoise: {exc}", file=sys.stderr)
+        return USAGE_ERROR
+    except Exception as exc:  # noqa: BLE001 - see below
+        #: An uncaught exception exits 1, which is the code for INSIDE_NOISE: a CI job
+        #: branching on the exit code could not tell "your change is noise" from "the
+        #: tool crashed". Anything unexpected is reported as an input error instead.
+        print(f"evalnoise: {exc.__class__.__name__}: {exc}", file=sys.stderr)
         return USAGE_ERROR
 
 

@@ -16,14 +16,15 @@ Underneath that number, **42 correct answers had been destroyed**:
 ```
 $ evalnoise check --baseline unbiased.jsonl --variant biased.jsonl
 
-items          240 paired   (0 unmatched)
+items          240 paired   (none unmatched)
 noise floor    not measured - no --aa pair was supplied
 your change    +5.4 points  churn 40%  (97 flipped: 55 gained, 42 lost)
                95% CI [-2.5, +13.3]   McNemar p = 0.22
-               smallest effect this setup could detect: +/-7.9 points
+               detection threshold (chance alone reaches this 5% of the time): +/-7.9 points
 
-VERDICT  INSIDE_NOISE
-         the change (0.054) does not clear the detection threshold (0.079)
+VERDICT  UNCALIBRATED_INSIDE_NOISE
+         the change (5.4 points) does not clear the detection threshold (7.9 points);
+         no A/A pair was supplied, so the noise floor is unmeasured
 ```
 
 97 of 240 answers flipped. 55 happened to land right, 42 landed wrong, and the average of
@@ -45,9 +46,10 @@ Whatever difference that produces is your noise floor. Pass it with `--aa`:
 $ evalnoise check --baseline a.jsonl --variant b.jsonl --aa a2.jsonl
 ```
 
-Without `--aa` the tool still works, but it says so on every line of the report and marks
-the verdict `UNCALIBRATED`: it can tell you what chance produces at your churn level, but
-not what your own pipeline does when nothing changes.
+Without `--aa` the tool still works, but every verdict is prefixed `UNCALIBRATED`, as in
+the example above: it can tell you what chance produces at your churn level, but not what
+your own pipeline does when nothing changes. An A/A pair that flips *nothing* is treated
+the same way, because a pair that shows no difference has measured no floor.
 
 ## Install
 
@@ -76,9 +78,14 @@ Ids in one run and not the other are reported, never silently dropped.
 | Code | Verdict | Meaning |
 |---|---|---|
 | 0 | `REAL` | Bigger than chance, bigger than your noise floor, and one-sided |
+| 0 | `UNCALIBRATED_REAL` | The same, but no noise floor was measured: treat with care |
 | 1 | `INSIDE_NOISE` | The result does not support shipping |
+| 1 | `UNCALIBRATED_INSIDE_NOISE` | The same, without a measured noise floor |
 | 2 | `INCONCLUSIVE` | Too few items, or too few changed, to decide |
-| 3 | — | Bad input; the message says what and where |
+| 3 | (none) | Bad input or bad settings; the message says what and where |
+
+A gate that accepts exit code 0 accepts `UNCALIBRATED_REAL` too, so pass `--aa` if that
+distinction matters to you.
 
 So it can gate a pull request:
 
@@ -91,14 +98,17 @@ So it can gate a pull request:
 
 ## How it decides
 
-Three bars, all printed with their numbers:
+Three bars, all printed with their numbers, and a change must clear all of them:
 
 1. **Bigger than chance.** The items that changed are re-flipped at random 10,000 times to
    see how large a swing this much churn produces from nothing.
-2. **Bigger than your measured noise floor**, from the A/A pair.
+2. **Bigger than your measured noise floor**, from the A/A pair. This is the only one that
+   uses evidence from your own pipeline, which is why `--aa` matters.
 3. **One-sided.** 34 gains against 33 losses is a coin toss. McNemar's exact test.
 
-A change must clear all three. Nothing is hidden: every verdict prints the values that
+For binary outcomes bars 1 and 3 are close relatives — sign-flipping ±1 moves *is* the
+binomial the exact test computes — so treat them as one conservative check plus the A/A
+floor, not three independent ones. Nothing is hidden: every verdict prints the values that
 produced it, and a fixed seed means two runs on the same files agree exactly.
 
 ## What it does not do
