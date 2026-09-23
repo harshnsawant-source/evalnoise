@@ -39,3 +39,12 @@ def test_json_report_is_machine_readable_and_complete():
     document = json.loads(render_json(analyse(paired([1, 0] * 60, [1, 1] * 60))))
     assert document["schema_version"] == 1
     assert "reason" in document["verdict"]
+
+
+def test_report_is_ascii_so_it_survives_a_windows_console():
+    #: A cp1252 console turns ± and — into replacement characters, which is what a
+    #: Windows user saw in the very first run of this tool.
+    ab = paired([1, 0] * 60, [1, 1] * 60)
+    aa = paired([1, 0] * 60, [0, 1] * 60)
+    text = render_text(analyse(ab, aa))
+    text.encode("ascii")

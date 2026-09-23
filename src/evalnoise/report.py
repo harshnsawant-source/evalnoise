@@ -1,4 +1,9 @@
-"""Turn an analysis into something a person reads, or a machine parses."""
+"""Turn an analysis into something a person reads, or a machine parses.
+
+The text report stays ASCII on purpose. A Windows console defaults to cp1252, where a
+plus-minus sign or an em dash arrives as a replacement character, and a tool whose first
+line of output is mojibake has spent its credibility before it says anything.
+"""
 
 from __future__ import annotations
 
@@ -19,11 +24,11 @@ def render_text(analysis: dict) -> str:
     noise = analysis["noise_floor"]
     if noise:
         lines.append(
-            f"noise floor    ±{noise['band'] * 100:.1f} points  "
+            f"noise floor    +/-{noise['band'] * 100:.1f} points  "
             f"churn {noise['churn_rate']:.0%}  ({noise['churn_count']} flipped)"
         )
     else:
-        lines.append("noise floor    not measured — no --aa pair was supplied")
+        lines.append("noise floor    not measured - no --aa pair was supplied")
     lines += [
         f"your change    {_points(change['delta'])} points  "
         f"churn {change['churn_rate']:.0%}  ({change['churn_count']} flipped: "
@@ -31,7 +36,7 @@ def render_text(analysis: dict) -> str:
         f"               95% CI [{_points(change['ci_low'])}, {_points(change['ci_high'])}]   "
         f"McNemar p = {change['p_value']:.2f}",
         f"               smallest effect this setup could detect: "
-        f"±{change['critical'] * 100:.1f} points",
+        f"+/-{change['critical'] * 100:.1f} points",
         "",
         f"VERDICT  {analysis['verdict']['name']}",
         f"         {analysis['verdict']['reason']}",
