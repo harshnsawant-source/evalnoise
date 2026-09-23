@@ -911,6 +911,9 @@ def _summarise(p: Paired, *, epsilon: float, seed: int, alpha: float) -> dict:
         "losses": losses,
         "ci_low": low,
         "ci_high": high,
+        #: For binary outcomes this is McNemar's exact test. For numeric outcomes the same
+        #: computation is the sign test over items that improved or worsened, which asks the
+        #: question that matters here: did the change push in a direction, or scatter?
         "p_value": stats.mcnemar_exact(gains, losses),
         "critical": stats.permutation_critical(
             p.baseline, p.variant, epsilon=epsilon, seed=seed, alpha=alpha
@@ -1136,7 +1139,8 @@ def _parser() -> argparse.ArgumentParser:
     check.add_argument("--alpha", type=float, default=0.05, help="significance level (default 0.05)")
     check.add_argument("--seed", type=int, default=stats.DEFAULT_SEED, help="random seed")
     check.add_argument("--json", action="store_true", help="print the analysis as JSON")
-    return check.set_defaults(func=_check) or parser
+    check.set_defaults(func=_check)
+    return parser
 
 
 def _check(args: argparse.Namespace) -> int:
@@ -1250,7 +1254,7 @@ Expected: both pass. If the power test fails, do **not** loosen the thresholds i
 
 - [ ] **Step 3: Speed the tests up if they take longer than 60 seconds**
 
-Add to `tests/test_simulation.py` a module-level constant `RESAMPLES = 2000` and pass it through `analyse(..., )` only if a `resamples` argument exists; otherwise reduce `trials` to 40. Record whichever you did in the commit message.
+`analyse` takes no `resamples` argument, so the way to make these faster is fewer trials, not fewer resamples: change `trials = 60` to `trials = 40` in both tests and leave everything else alone. Forty trials still separates a 5% false-positive rate from a broken procedure. Say in the commit message that you did it.
 
 - [ ] **Step 4: Run the whole suite**
 
@@ -1338,8 +1342,9 @@ def test_reproduces_the_published_numbers(analysis):
 
 
 def test_the_positive_delta_does_not_survive_the_verdict(analysis):
-    assert analysis["verdict"]["name"] == "UNCALIBRATED_INSIDE_NOISE" or \
-           analysis["verdict"]["name"] == "INSIDE_NOISE"
+    #: No A/A pair exists for this published run, so only the detection threshold and the
+    #: balance of flips are available to judge it — and the change clears neither.
+    assert analysis["verdict"]["name"] == "INSIDE_NOISE"
     assert analysis["change"]["p_value"] > 0.05
 ```
 

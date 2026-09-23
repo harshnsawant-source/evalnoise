@@ -91,8 +91,10 @@ items.
   pair is flipped with probability 0.5, the delta recomputed, and this repeated 10,000 times with
   a fixed seed. The **critical value** `c*` is the 95th percentile of `|delta|` in that
   distribution: the largest swing the setup produces by chance alone at this churn level.
-- **Significance.** For binary outcomes, McNemar's exact test on the discordant counts
-  (a two-sided binomial test with p = 0.5). For numeric outcomes, the permutation test above.
+- **Significance.** A two-sided binomial test with p = 0.5 on the counts of items that improved
+  and worsened. For binary outcomes that is McNemar's exact test; for numeric outcomes it is the
+  sign test, which asks the same question: did the change push in one direction, or scatter? The
+  permutation test above supplies the size threshold, not the p-value.
 - **Confidence interval.** Paired bootstrap over the per-item differences `d_i = y_i - x_i`,
   10,000 resamples, reported as a 95% percentile interval.
 - **Noise floor.** From the A/A pair, the same delta and churn are computed, and the noise band
