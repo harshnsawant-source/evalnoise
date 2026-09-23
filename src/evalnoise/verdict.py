@@ -11,6 +11,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from evalnoise import stats
+from evalnoise.load import Paired
+
+SCHEMA_VERSION = 1
+
 
 @dataclass(frozen=True)
 class Verdict:
@@ -82,3 +87,73 @@ def decide(
             0,
         )
     return Verdict("REAL", reason, 0)
+
+
+def _summarise(p: Paired, *, epsilon: float, seed: int, alpha: float) -> dict:
+    changed, rate = stats.churn(p.baseline, p.variant, epsilon)
+    gains, losses = stats.gains_losses(p.baseline, p.variant, epsilon)
+    low, high = stats.bootstrap_ci(p.baseline, p.variant, seed=seed)
+    return {
+        "delta": stats.delta(p.baseline, p.variant),
+        "churn_count": changed,
+        "churn_rate": rate,
+        "gains": gains,
+        "losses": losses,
+        "ci_low": low,
+        "ci_high": high,
+        #: For binary outcomes this is McNemar's exact test. For numeric outcomes the same
+        #: computation is the sign test over items that improved or worsened, which asks the
+        #: question that matters here: did the change push in a direction, or scatter?
+        "p_value": stats.mcnemar_exact(gains, losses),
+        "critical": stats.permutation_critical(
+            p.baseline, p.variant, epsilon=epsilon, seed=seed, alpha=alpha
+        ),
+    }
+
+
+def analyse(
+    paired_ab: Paired,
+    paired_aa: Paired | None = None,
+    *,
+    epsilon: float = 0.0,
+    seed: int = stats.DEFAULT_SEED,
+    alpha: float = 0.05,
+) -> dict:
+    """Everything the verdict rests on, in one serialisable document."""
+    change = _summarise(paired_ab, epsilon=epsilon, seed=seed, alpha=alpha)
+    noise = None
+    if paired_aa is not None:
+        aa = _summarise(paired_aa, epsilon=epsilon, seed=seed, alpha=alpha)
+        aa["band"] = max(abs(aa["ci_low"]), abs(aa["ci_high"]))
+        noise = aa
+    decision = decide(
+        delta_ab=change["delta"],
+        gains=change["gains"],
+        losses=change["losses"],
+        n=len(paired_ab.ids),
+        critical=change["critical"],
+        noise_band=None if noise is None else noise["band"],
+        p_value=change["p_value"],
+        alpha=alpha,
+    )
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "items": {
+            "paired": len(paired_ab.ids),
+            "unmatched_baseline": len(paired_ab.unmatched_baseline),
+            "unmatched_variant": len(paired_ab.unmatched_variant),
+        },
+        "change": change,
+        "noise_floor": noise,
+        "verdict": {
+            "name": decision.name,
+            "reason": decision.reason,
+            "exit_code": decision.exit_code,
+        },
+        "config": {
+            "epsilon": epsilon,
+            "seed": seed,
+            "alpha": alpha,
+            "resamples": stats.DEFAULT_RESAMPLES,
+        },
+    }
