@@ -179,8 +179,8 @@ Tests are written before the code they cover.
 - New repository `evalnoise`, MIT licence.
 - GitHub Actions running the test suite on Python 3.10 through 3.13.
 - README opening with the `still-holds` example and teaching the A/A habit in its first section.
-- **Strategy-free**: the repository says nothing about applications, employers, or the author's
-  other projects, and is checked by grep before each commit.
+- **Strategy-free**: the repository documents the tool and nothing else. It carries no material
+  about the author's other work or plans, and this is checked by grep before each commit.
 - Published to PyPI as `evalnoise`; the name was checked as available on 2026-09-23.
 
 ## 12. Risks
