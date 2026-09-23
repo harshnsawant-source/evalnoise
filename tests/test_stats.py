@@ -53,3 +53,40 @@ def test_no_discordant_pairs_gives_p_of_one():
 
 def test_mcnemar_is_symmetric():
     assert stats.mcnemar_exact(12, 3) == stats.mcnemar_exact(3, 12)
+
+
+def test_permutation_critical_value_grows_with_churn():
+    #: Same number of items; the run with more changed items must tolerate a bigger
+    #: swing before a difference counts as real.
+    quiet_base = [1] * 96 + [0] * 4
+    quiet_var = [1] * 94 + [0] * 6
+    noisy_base = [1] * 60 + [0] * 40
+    noisy_var = [0] * 40 + [1] * 60
+    quiet = stats.permutation_critical(quiet_base, quiet_var)
+    noisy = stats.permutation_critical(noisy_base, noisy_var)
+    assert noisy > quiet
+
+
+def test_permutation_is_reproducible_under_a_fixed_seed():
+    base = [1, 0] * 50
+    var = [1, 1] * 50
+    first = stats.permutation_critical(base, var, seed=7)
+    second = stats.permutation_critical(base, var, seed=7)
+    assert first == second
+
+
+def test_permutation_critical_is_zero_when_nothing_changed():
+    same = [1, 0, 1, 1, 0]
+    assert stats.permutation_critical(same, same) == 0.0
+
+
+def test_bootstrap_interval_contains_the_observed_delta():
+    base = [1, 0] * 60
+    var = [1, 1] * 60
+    low, high = stats.bootstrap_ci(base, var)
+    assert low <= stats.delta(base, var) <= high
+
+
+def test_bootstrap_interval_is_degenerate_when_runs_are_identical():
+    same = [1, 1, 0, 0]
+    assert stats.bootstrap_ci(same, same) == (0.0, 0.0)

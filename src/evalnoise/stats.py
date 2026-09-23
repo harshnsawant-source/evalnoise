@@ -12,8 +12,12 @@ difference counts as a change, which is what binary outcomes need.
 
 from __future__ import annotations
 
+import random
 from collections.abc import Sequence
 from math import comb
+
+DEFAULT_SEED = 20260923
+DEFAULT_RESAMPLES = 10_000
 
 Number = float | int | bool
 
@@ -68,3 +72,63 @@ def mcnemar_exact(gains: int, losses: int) -> float:
     k = min(gains, losses)
     tail = sum(comb(n, i) for i in range(0, k + 1)) / (2 ** n)
     return min(1.0, 2 * tail)
+
+
+def permutation_critical(
+    baseline: Sequence[Number],
+    variant: Sequence[Number],
+    *,
+    epsilon: float = 0.0,
+    resamples: int = DEFAULT_RESAMPLES,
+    seed: int = DEFAULT_SEED,
+    alpha: float = 0.05,
+) -> float:
+    """The largest swing this setup produces by chance alone.
+
+    Under the null the change had no direction, so each item that moved was equally
+    likely to have moved the other way. Flipping each changed item's direction at
+    random, many times, gives the distribution of deltas a setup with this much churn
+    produces from nothing. The returned value is that distribution's (1 - alpha)
+    quantile of |delta|: an effect smaller than this is not distinguishable from churn.
+    """
+    _check(baseline, variant)
+    moves = [v - b for b, v in zip(baseline, variant) if abs(v - b) > epsilon]
+    if not moves:
+        return 0.0
+    n = len(baseline)
+    rng = random.Random(seed)
+    swings = []
+    for _ in range(resamples):
+        total = sum(m if rng.random() < 0.5 else -m for m in moves)
+        swings.append(abs(total) / n)
+    swings.sort()
+    index = min(len(swings) - 1, int(round((1 - alpha) * (len(swings) - 1))))
+    return swings[index]
+
+
+def bootstrap_ci(
+    baseline: Sequence[Number],
+    variant: Sequence[Number],
+    *,
+    resamples: int = DEFAULT_RESAMPLES,
+    seed: int = DEFAULT_SEED,
+    confidence: float = 0.95,
+) -> tuple[float, float]:
+    """Percentile interval for the delta, resampling items in pairs.
+
+    Items are resampled as pairs rather than independently, because the two runs saw
+    the same items; pairing is what removes the item-difficulty variance that would
+    otherwise swamp the effect.
+    """
+    _check(baseline, variant)
+    diffs = [v - b for b, v in zip(baseline, variant)]
+    n = len(diffs)
+    rng = random.Random(seed)
+    means = []
+    for _ in range(resamples):
+        means.append(sum(diffs[rng.randrange(n)] for _ in range(n)) / n)
+    means.sort()
+    tail = (1 - confidence) / 2
+    low = means[int(round(tail * (len(means) - 1)))]
+    high = means[int(round((1 - tail) * (len(means) - 1)))]
+    return low, high
